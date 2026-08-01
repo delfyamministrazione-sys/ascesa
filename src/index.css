@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@theme {
+  --color-spirito: #8b5cf6;
+  --color-corpo: #ef4444;
+  --color-tavola: #f59e0b;
+  --color-mente: #3b82f6;
+  --color-vita: #22c55e;
+
+  --color-ink: #e8ebf1;
+  --color-ink-dim: #97a0b2;
+  --color-panel: #141a26;
+  --color-panel2: #1b2333;
+  --color-line: #263043;
+  --color-bg: #0b0f19;
+  --color-accent: #a78bfa;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* nasconde le frecce degli input number su mobile */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

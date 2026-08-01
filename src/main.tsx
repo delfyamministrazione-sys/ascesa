@@ -1,0 +1,17 @@
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { HashRouter } from 'react-router-dom'
+import './index.css'
+import App from './App.tsx'
+import { ToastProvider } from './components/ui'
+
+// HashRouter: nessun problema di route su GitHub Pages (tutto sotto /ascesa/index.html)
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <HashRouter>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </HashRouter>
+  </StrictMode>,
+)
