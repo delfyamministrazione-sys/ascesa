@@ -29,7 +29,13 @@ export default function App() {
   const [seeded, setSeeded] = useState(false)
   useEffect(() => {
     requestPersistence()
-    ensureSeed().then(() => setSeeded(true))
+    // Anche se il seed dovesse fallire, non blocchiamo l'app sullo splash.
+    ensureSeed()
+      .then(() => setSeeded(true))
+      .catch((err) => {
+        console.error('ensureSeed error', err)
+        setSeeded(true)
+      })
   }, [])
 
   const onboardingRow = useLiveQuery(() => db.settings.get('onboarding_done'), [])
