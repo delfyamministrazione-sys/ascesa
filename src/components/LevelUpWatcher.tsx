@@ -6,7 +6,8 @@ import { binario } from '../lib/binari'
 
 // Mostra un momento di soddisfazione quando un binario sale di livello.
 export function LevelUpWatcher() {
-  const levelUps = useLiveQuery(() => db.levelUps.orderBy('ts').toArray(), [])
+  // NB: 'ts' non e indicizzato su levelUps -> niente orderBy, ordino in JS.
+  const levelUps = useLiveQuery(() => db.levelUps.toArray(), [])
   const seen = useRef<number | null>(null)
   const [celebra, setCelebra] = useState<LevelUp | null>(null)
 
