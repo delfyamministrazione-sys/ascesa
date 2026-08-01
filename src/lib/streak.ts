@@ -1,6 +1,6 @@
 import { startOfDay } from 'date-fns'
-import type { Phase } from '../db/types'
-import { addDays, dayKey } from './dates'
+import type { Modalita, Phase } from '../db/types'
+import { addDays, logicalDayKey } from './dates'
 import { isTrasferta, modalitaForDate } from './phases'
 
 /**
@@ -12,6 +12,7 @@ export function computeStreak(
   activityDayKeys: Set<string>,
   phases: Phase[],
   today: Date = new Date(),
+  overrideToday: Modalita | null = null,
 ): number {
   let streak = 0
   let cursor = startOfDay(today)
@@ -19,13 +20,15 @@ export function computeStreak(
   let guard = 0
 
   while (guard++ < 500) {
-    const mod = modalitaForDate(phases, cursor)
+    // il Trasferta manuale vale solo per oggi
+    const mod = isToday && overrideToday ? overrideToday : modalitaForDate(phases, cursor)
     if (isTrasferta(mod)) {
       cursor = addDays(cursor, -1)
       isToday = false
       continue
     }
-    const has = activityDayKeys.has(dayKey(cursor))
+    // uso mezzogiorno come riferimento: il giorno logico coincide col giorno di calendario
+    const has = activityDayKeys.has(logicalDayKey(cursor.getTime() + 12 * 3_600_000))
     if (has) {
       streak++
     } else if (!isToday) {

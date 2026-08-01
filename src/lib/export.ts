@@ -1,5 +1,6 @@
 import { db } from '../db/db'
 import { dayKey } from './dates'
+import { markBackup } from './storage'
 
 function trigger(filename: string, content: string, type: string) {
   const blob = new Blob([content], { type })
@@ -115,6 +116,7 @@ async function sessionsCSV(): Promise<string> {
 export async function exportJSON() {
   const data = await collectAll()
   trigger(`ascesa-${dayKey()}.json`, JSON.stringify(data, null, 2), 'application/json')
+  await markBackup()
 }
 
 export async function exportTuttoCSV() {
@@ -122,6 +124,7 @@ export async function exportTuttoCSV() {
   await exportJSON()
   const csv = await metricEntriesCSV()
   setTimeout(() => trigger(`ascesa-metriche-${dayKey()}.csv`, csv, 'text/csv'), 400)
+  await markBackup()
 }
 
 export async function exportCSVMetriche() {

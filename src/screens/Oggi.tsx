@@ -2,20 +2,24 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import type { Binario, Session } from '../db/types'
+import type { Binario, Modalita, Session } from '../db/types'
 import { Card, Chip, ProgressBar, SectionTitle, useToast } from '../components/ui'
 import { useProgress } from '../hooks/useProgress'
 import { BINARI, binario } from '../lib/binari'
 import { MODALITA } from '../lib/phases'
-import { dayKey, shortDate } from '../lib/dates'
+import { logicalDayKey, shortDate } from '../lib/dates'
 import { ATTIVITA_PER_BINARIO, domandaStudioPerGiorno } from '../lib/options'
 import {
   closeSession,
   completaMissione,
+  deleteSession,
   getMissione,
+  logVita,
   setMissione,
+  setModalitaOverride,
   startSession,
 } from '../lib/actions'
+import { daysSince, getLastBackup } from '../lib/storage'
 import { CheckinFlow } from './CheckinFlow'
 
 type Tipo = 'wake' | 'prelunch' | 'pretraining' | 'evening'
@@ -25,29 +29,34 @@ const CHECKINS: { tipo: Tipo; label: string }[] = [
   { tipo: 'pretraining', label: 'Pre-allen.' },
   { tipo: 'evening', label: 'Sera' },
 ]
-
 const CHECKIN_META: Record<Tipo, { label: string; color: string }> = {
   wake: { label: 'Check-in Risveglio', color: '#ef4444' },
   prelunch: { label: 'Check-in Pre-pranzo', color: '#f59e0b' },
   pretraining: { label: 'Check-in Pre-allenamento', color: '#ef4444' },
   evening: { label: 'Check-in Sera', color: '#8b5cf6' },
 }
+const VITA_QUICK = ['Riposo', 'Ozio', 'Tempo con altri', 'Gioco', 'Sport']
 
 export function Oggi() {
   const { progress, streak, modalita, fase, totaleXp } = useProgress()
   const [checkinAttivo, setCheckinAttivo] = useState<Tipo | null>(null)
   const navigate = useNavigate()
+  const { toastXp } = useToast()
 
-  const oggi = dayKey()
+  const oggi = logicalDayKey()
   const checkinsOggi = useLiveQuery(async () => {
     const all = await db.checkins.toArray()
-    return new Set(all.filter((c) => dayKey(c.ts) === oggi).map((c) => c.tipo))
+    return new Set(all.filter((c) => logicalDayKey(c.ts) === oggi).map((c) => c.tipo))
   }, [oggi])
+  const overrideRow = useLiveQuery(() => db.settings.get('modalita_override'), [])
+  const backupRow = useLiveQuery(() => getLastBackup(), [])
 
-  const isTrasferta = modalita !== 'normale'
   const done = checkinsOggi ?? new Set<string>()
+  const isTrasferta = modalita !== 'normale'
+  const override = (overrideRow?.value as Modalita | undefined) ?? null
+  const giorniBackup = daysSince((backupRow ?? null) as number | null)
+  const backupUrgente = backupRow !== undefined && (giorniBackup === null || giorniBackup >= 4)
 
-  // "Prossima azione" in base all'ora e a cosa manca (recognition over recall)
   const ora = new Date().getHours()
   let prossimo: Tipo | null = null
   if (!isTrasferta && ora < 11 && !done.has('wake')) prossimo = 'wake'
@@ -55,9 +64,14 @@ export function Oggi() {
   else if (!isTrasferta && ora >= 15 && ora < 20 && !done.has('pretraining')) prossimo = 'pretraining'
   else if (ora >= 18 && !done.has('evening')) prossimo = 'evening'
 
+  const vita = async (a: string) => {
+    const xp = await logVita(a)
+    if (navigator.vibrate) navigator.vibrate(12)
+    toastXp(xp, 'vita')
+  }
+
   return (
     <div className="mx-auto max-w-md px-4 pb-8 pt-safe">
-      {/* Header */}
       <div className="flex items-center justify-between py-4">
         <div>
           <div className="text-xs uppercase tracking-wider text-ink-dim">{shortDate(new Date())}</div>
@@ -69,7 +83,19 @@ export function Oggi() {
         </div>
       </div>
 
-      {/* Prossima azione */}
+      {backupUrgente && (
+        <button
+          onClick={() => navigate('/menu')}
+          className="mb-3 w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-left"
+        >
+          <div className="text-sm font-semibold text-amber-300">Fai un backup dei dati</div>
+          <div className="text-xs text-amber-200/80">
+            {giorniBackup === null ? 'Non hai mai esportato.' : `Ultimo backup ${giorniBackup} giorni fa.`}{' '}
+            Menu → Esporta (i dati vivono solo su questo telefono).
+          </div>
+        </button>
+      )}
+
       {prossimo ? (
         <button
           onClick={() => setCheckinAttivo(prossimo)}
@@ -87,11 +113,11 @@ export function Oggi() {
         >
           <div className="text-xs text-ink-dim">Prossima azione</div>
           <div className="text-lg font-bold">Tutto in pari per ora</div>
-          <div className="text-xs text-ink-dim">Se parte un impulso, registralo qui.</div>
+          <div className="text-xs text-ink-dim">Se parte un impulso, registralo.</div>
         </button>
       )}
 
-      {/* Fase */}
+      {/* Fase + Trasferta manuale */}
       {fase && (
         <Card className="mb-2">
           <div className="flex items-center justify-between">
@@ -106,10 +132,28 @@ export function Oggi() {
               <div className="text-[11px] text-ink-dim">XP totali</div>
             </div>
           </div>
-          {isTrasferta && (
-            <div className="mt-2 text-xs text-ink-dim">
-              Trasferta: solo azioni minime (impulso, sera, spirito). Streak congelata.
-            </div>
+          <div className="mt-3 flex gap-2">
+            {([
+              { k: null, l: 'Auto' },
+              { k: 'trasferta', l: 'Trasferta' },
+              { k: 'trasferta_leggera', l: 'Traf. leggera' },
+            ] as { k: Modalita | null; l: string }[]).map((o) => (
+              <button
+                key={o.l}
+                onClick={() => setModalitaOverride(o.k)}
+                className={`flex-1 rounded-xl border py-2 text-xs font-semibold ${
+                  override === o.k ? 'border-accent bg-accent/15 text-accent' : 'border-line bg-panel2 text-ink-dim'
+                }`}
+              >
+                {o.l}
+              </button>
+            ))}
+          </div>
+          {override && (
+            <p className="mt-2 text-[11px] text-ink-dim">
+              Trasferta manuale attiva: streak congelata, solo azioni minime, XP ridotti. "Auto" per
+              tornare al calendario.
+            </p>
           )}
         </Card>
       )}
@@ -117,12 +161,15 @@ export function Oggi() {
       {/* XP per binario */}
       <SectionTitle>Binari</SectionTitle>
       {progress?.promossoQuestaSettimana && (
-        <div className="mb-2 rounded-xl border px-3 py-2 text-xs" style={{ borderColor: binario(progress.promossoQuestaSettimana).color }}>
-          Questa settimana e salito di livello:{' '}
+        <div
+          className="mb-2 rounded-xl border px-3 py-2 text-xs"
+          style={{ borderColor: binario(progress.promossoQuestaSettimana).color }}
+        >
+          Questa settimana e salito:{' '}
           <span className="font-semibold" style={{ color: binario(progress.promossoQuestaSettimana).color }}>
             {binario(progress.promossoQuestaSettimana).nome}
           </span>
-          . Il prossimo salto e disponibile la settimana prossima.
+          . Il prossimo salto la settimana prossima.
         </div>
       )}
       <div className="space-y-2">
@@ -140,9 +187,7 @@ export function Oggi() {
                 <span className="font-semibold">{info.nome}</span>
                 <span className="ml-auto text-sm text-ink-dim">
                   Lv {p.level}
-                  {p.readyBlocked && (
-                    <span className="ml-1 text-[10px] text-accent">· pronto ↑</span>
-                  )}
+                  {p.readyBlocked && <span className="ml-1 text-[10px] text-accent">· pronto ↑</span>}
                 </span>
               </div>
               <ProgressBar pct={p.pct} color={info.color} />
@@ -158,31 +203,36 @@ export function Oggi() {
       <SectionTitle>Check-in di oggi</SectionTitle>
       <div className="grid grid-cols-2 gap-2">
         {CHECKINS.filter((c) => !isTrasferta || c.tipo === 'evening').map((c) => {
-          const done = checkinsOggi?.has(c.tipo)
+          const isDone = done.has(c.tipo)
           return (
             <button
               key={c.tipo}
               onClick={() => setCheckinAttivo(c.tipo)}
               className={`rounded-2xl border py-4 text-sm font-semibold active:scale-[.98] ${
-                done ? 'border-vita/50 bg-vita/10 text-vita' : 'border-line bg-panel'
+                isDone ? 'border-vita/50 bg-vita/10 text-vita' : 'border-line bg-panel'
               }`}
             >
-              {done ? '✓ ' : ''}
+              {isDone ? '✓ ' : ''}
               {c.label}
             </button>
           )
         })}
       </div>
 
-      {/* Missione settimanale */}
-      <MissioneSettimanale />
+      {/* Vita quick-log */}
+      <SectionTitle>Vita · un tap (anche l'ozio vale)</SectionTitle>
+      <div className="flex flex-wrap gap-2">
+        {VITA_QUICK.map((a) => (
+          <Chip key={a} color="#22c55e" onClick={() => vita(a)}>
+            + {a}
+          </Chip>
+        ))}
+      </div>
 
-      {/* Sessioni previsione/realta */}
+      <MissioneSettimanale />
       <SessioniBox soloSpirito={isTrasferta} />
 
-      {checkinAttivo && (
-        <CheckinFlow tipo={checkinAttivo} onClose={() => setCheckinAttivo(null)} />
-      )}
+      {checkinAttivo && <CheckinFlow tipo={checkinAttivo} onClose={() => setCheckinAttivo(null)} />}
     </div>
   )
 }
@@ -216,16 +266,17 @@ function MissioneSettimanale() {
           <div>
             <div className="text-sm font-medium">{missione.testo}</div>
             {missione.fatta ? (
-              <div className="mt-2 text-sm font-semibold text-vita">Completata ✓</div>
+              <div className="mt-2 text-sm font-semibold text-vita">Completata ✓ · +50 XP presi</div>
             ) : (
               <button
                 onClick={async () => {
                   const xp = await completaMissione()
+                  if (navigator.vibrate) navigator.vibrate(20)
                   if (xp > 0) toastXp(xp, 'vita')
                 }}
                 className="mt-2 w-full rounded-xl bg-vita py-3 text-sm font-semibold text-white"
               >
-                Segna completata · +40 XP
+                Segna completata · +50 XP
               </button>
             )}
           </div>
@@ -236,7 +287,7 @@ function MissioneSettimanale() {
 }
 
 function SessioniBox({ soloSpirito }: { soloSpirito: boolean }) {
-  const { toastXp } = useToast()
+  const { toastXp, toast } = useToast()
   const aperte = useLiveQuery(async () => {
     const all = await db.sessions.orderBy('ts').reverse().toArray()
     return all.filter((s) => s.realta === null)
@@ -302,14 +353,19 @@ function SessioniBox({ soloSpirito }: { soloSpirito: boolean }) {
           className="w-full rounded-xl py-3 text-sm font-semibold text-white disabled:bg-panel2 disabled:text-ink-dim"
           style={attivita ? { background: binario(binarioSel).color } : undefined}
         >
-          Avvia sessione · +6 XP
+          Avvia sessione · +8 XP
         </button>
       </Card>
 
       {aperte && aperte.length > 0 && (
         <div className="mt-3 space-y-3">
           {aperte.map((s) => (
-            <SessioneApertaCard key={s.id} s={s} onClosed={(xp) => toastXp(xp, s.binario)} />
+            <SessioneApertaCard
+              key={s.id}
+              s={s}
+              onClosed={(xp) => toastXp(xp, s.binario)}
+              onDeleted={() => toast('Sessione eliminata, XP annullati.')}
+            />
           ))}
         </div>
       )}
@@ -317,15 +373,25 @@ function SessioniBox({ soloSpirito }: { soloSpirito: boolean }) {
   )
 }
 
-function SessioneApertaCard({ s, onClosed }: { s: Session; onClosed: (xp: number) => void }) {
+function SessioneApertaCard({
+  s,
+  onClosed,
+  onDeleted,
+}: {
+  s: Session
+  onClosed: (xp: number) => void
+  onDeleted: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [realta, setRealta] = useState(5)
   const [durata, setDurata] = useState<number | null>(null)
   const [risposta, setRisposta] = useState('')
+  const [conferma, setConferma] = useState(false)
   const info = binario(s.binario)
 
   const chiudi = async () => {
     const xp = await closeSession(s.id!, realta, durata ?? 0, s.binario === 'spirito' ? risposta : null)
+    if (navigator.vibrate) navigator.vibrate(12)
     onClosed(xp)
   }
 
@@ -338,14 +404,28 @@ function SessioneApertaCard({ s, onClosed }: { s: Session; onClosed: (xp: number
             {info.nome} · previsto {s.previsione}/10
           </div>
         </div>
-        {!open && (
-          <button
-            onClick={() => setOpen(true)}
-            className="rounded-xl border border-line bg-panel2 px-3 py-2 text-sm font-semibold"
-          >
-            Chiudi
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!open && (
+            <button
+              onClick={() => setOpen(true)}
+              className="rounded-xl border border-line bg-panel2 px-3 py-2 text-sm font-semibold"
+            >
+              Chiudi
+            </button>
+          )}
+          {conferma ? (
+            <button
+              onClick={() => deleteSession(s.id!).then(onDeleted)}
+              className="rounded-xl bg-corpo px-3 py-2 text-xs font-semibold text-white"
+            >
+              Elimina
+            </button>
+          ) : (
+            <button onClick={() => setConferma(true)} className="px-2 text-ink-dim">
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {open && (
@@ -391,7 +471,7 @@ function SessioneApertaCard({ s, onClosed }: { s: Session; onClosed: (xp: number
             className="w-full rounded-xl py-3 text-sm font-semibold text-white"
             style={{ background: info.color }}
           >
-            Salva realta · +4 XP
+            Salva realta · +10 XP
           </button>
         </div>
       )}

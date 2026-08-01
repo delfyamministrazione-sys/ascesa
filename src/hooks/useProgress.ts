@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { computeProgress, reconcileLevels, type ProgressState } from '../lib/xp'
 import { computeStreak } from '../lib/streak'
-import { dayKey } from '../lib/dates'
+import { logicalDayKey } from '../lib/dates'
 import { MODALITA, phaseForDate } from '../lib/phases'
 import type { Modalita, Phase } from '../db/types'
 
@@ -26,6 +26,7 @@ export function useProgress(): AppProgress {
   const levelUps = useLiveQuery(() => db.levelUps.toArray(), [])
   const checkins = useLiveQuery(() => db.checkins.toArray(), [])
   const phases = useLiveQuery(() => db.phases.toArray(), [])
+  const overrideRow = useLiveQuery(() => db.settings.get('modalita_override'), [])
 
   const loading = !ledger || !levelUps || !checkins || !phases
 
@@ -33,15 +34,16 @@ export function useProgress(): AppProgress {
     return { progress: null, streak: 0, modalita: 'normale', fase: null, totaleXp: 0, loading: true }
   }
 
+  const override = (overrideRow?.value as Modalita | undefined) ?? null
   const progress = computeProgress(ledger, levelUps)
 
   const activityDays = new Set<string>()
-  for (const e of ledger) activityDays.add(dayKey(e.ts))
-  for (const c of checkins) activityDays.add(dayKey(c.ts))
-  const streak = computeStreak(activityDays, phases)
+  for (const e of ledger) activityDays.add(logicalDayKey(e.ts))
+  for (const c of checkins) activityDays.add(logicalDayKey(c.ts))
+  const streak = computeStreak(activityDays, phases, new Date(), override)
 
   const fase = phaseForDate(phases)
-  const modalita = fase?.modalita ?? 'normale'
+  const modalita: Modalita = override ?? fase?.modalita ?? 'normale'
   const totaleXp = ledger.reduce((s, e) => s + e.xp, 0)
 
   return { progress, streak, modalita, fase, totaleXp, loading: false }

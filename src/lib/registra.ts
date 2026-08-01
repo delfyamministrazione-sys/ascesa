@@ -1,5 +1,5 @@
 import type { MetricDefinition } from '../db/types'
-import { dayKey, isoWeekKey } from './dates'
+import { isoWeekKey, logicalDayKey } from './dates'
 
 export type Momento = 'risveglio' | 'giorno' | 'sessione' | 'settimana' | 'due_settimane'
 
@@ -33,7 +33,7 @@ export function isDoneInPeriod(def: MetricDefinition, lastTs: number | null, now
   const m = momentoOf(def)
   if (m === 'settimana') return isoWeekKey(lastTs) === isoWeekKey(now)
   if (m === 'due_settimane') return now - lastTs < 14 * 86_400_000
-  return dayKey(lastTs) === dayKey(now) // risveglio / giorno / sessione = giornaliero
+  return logicalDayKey(lastTs) === logicalDayKey(now) // risveglio / giorno / sessione = giornaliero
 }
 
 // Priorità: le metriche ad alto valore in cima alla cartella.

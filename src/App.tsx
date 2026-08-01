@@ -3,13 +3,16 @@ import { Routes, Route } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { ensureSeed } from './db/seed'
 import { db, setSetting } from './db/db'
+import { requestPersistence } from './lib/storage'
 import { BottomNav } from './components/BottomNav'
+import { LevelUpWatcher } from './components/LevelUpWatcher'
 import { Onboarding } from './screens/Onboarding'
 import { Oggi } from './screens/Oggi'
 import { Registra } from './screens/Registra'
 import { Impulso } from './screens/Impulso'
 import { Corpo } from './screens/Corpo'
 import { Menu } from './screens/Menu'
+import { Lab } from './screens/Lab'
 
 function Splash() {
   return (
@@ -25,6 +28,7 @@ function Splash() {
 export default function App() {
   const [seeded, setSeeded] = useState(false)
   useEffect(() => {
+    requestPersistence()
     ensureSeed().then(() => setSeeded(true))
   }, [])
 
@@ -44,10 +48,12 @@ export default function App() {
           <Route path="/impulso" element={<Impulso />} />
           <Route path="/corpo" element={<Corpo />} />
           <Route path="/menu" element={<Menu />} />
+          <Route path="/lab" element={<Lab />} />
           <Route path="*" element={<Oggi />} />
         </Routes>
       </main>
       <BottomNav />
+      <LevelUpWatcher />
     </div>
   )
 }

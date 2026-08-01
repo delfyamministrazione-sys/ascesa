@@ -1,11 +1,14 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, setSetting } from '../db/db'
 import type { Binario, Frequenza, MetricDefinition, TipoInput } from '../db/types'
 import { BigButton, Card, Chip, SectionTitle, useToast } from '../components/ui'
 import { BINARI, binario } from '../lib/binari'
 import { MODALITA } from '../lib/phases'
-import { dayKey } from '../lib/dates'
+import { dayKey, shortDateTime } from '../lib/dates'
+import { deleteCheckin, deleteImpulse, deleteSession } from '../lib/actions'
+import { IMPULSO_TIPI } from '../lib/options'
 import {
   exportCSVImpulsi,
   exportCSVMetriche,
@@ -14,10 +17,11 @@ import {
   exportTuttoCSV,
 } from '../lib/export'
 
-type Panel = 'home' | 'export' | 'admin' | 'fasi' | 'impostazioni' | 'regole'
+type Panel = 'home' | 'export' | 'admin' | 'fasi' | 'impostazioni' | 'regole' | 'gestisci'
 
 export function Menu() {
   const [panel, setPanel] = useState<Panel>('home')
+  const navigate = useNavigate()
 
   if (panel !== 'home') {
     return (
@@ -30,15 +34,17 @@ export function Menu() {
         {panel === 'fasi' && <FasiPanel />}
         {panel === 'impostazioni' && <ImpostazioniPanel />}
         {panel === 'regole' && <RegolePanel />}
+        {panel === 'gestisci' && <GestisciPanel />}
       </div>
     )
   }
 
   const voci: { p: Panel; label: string; sub: string }[] = [
     { p: 'export', label: 'Esporta dati', sub: 'JSON + CSV per l analisi settimanale' },
+    { p: 'gestisci', label: 'Gestisci dati', sub: 'Correggi o elimina check-in, impulsi, sessioni' },
     { p: 'admin', label: 'Metriche', sub: 'Aggiungi o disattiva metriche senza codice' },
     { p: 'fasi', label: 'Fasi', sub: 'Calendario e modalita Trasferta' },
-    { p: 'impostazioni', label: 'Impostazioni', sub: 'Modulo calorie, onboarding' },
+    { p: 'impostazioni', label: 'Impostazioni', sub: 'Modulo calorie, altezza, onboarding' },
     { p: 'regole', label: 'Le 5 regole', sub: 'Come funziona il gioco' },
   ]
 
@@ -46,6 +52,15 @@ export function Menu() {
     <div className="mx-auto max-w-md px-4 pb-8 pt-safe">
       <h1 className="py-4 text-xl font-bold">Menu</h1>
       <div className="space-y-3">
+        <Card onClick={() => navigate('/lab')}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold">Laboratorio</div>
+              <div className="text-xs text-ink-dim">Correlazioni, calibrazione, benchmark, foto</div>
+            </div>
+            <span className="text-ink-dim">›</span>
+          </div>
+        </Card>
         {voci.map((v) => (
           <Card key={v.p} onClick={() => setPanel(v.p)}>
             <div className="flex items-center justify-between">
@@ -366,6 +381,85 @@ function RegolePanel() {
             </div>
           </Card>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function RigaElim({ label, sub, onDelete }: { label: string; sub: string; onDelete: () => void }) {
+  const [conferma, setConferma] = useState(false)
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-3 py-2.5">
+      <div className="min-w-0">
+        <div className="truncate text-sm">{label}</div>
+        <div className="text-[11px] text-ink-dim">{sub}</div>
+      </div>
+      {conferma ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={onDelete} className="rounded-lg bg-corpo px-3 py-1.5 text-xs font-semibold text-white">
+            Elimina
+          </button>
+          <button onClick={() => setConferma(false)} className="px-1 text-xs text-ink-dim">
+            no
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setConferma(true)} className="shrink-0 px-2 text-ink-dim">
+          ✕
+        </button>
+      )}
+    </div>
+  )
+}
+
+function GestisciPanel() {
+  const { toast } = useToast()
+  const checkins = useLiveQuery(() => db.checkins.orderBy('ts').reverse().limit(20).toArray(), [])
+  const impulses = useLiveQuery(() => db.impulses.orderBy('tsInizio').reverse().limit(20).toArray(), [])
+  const sessions = useLiveQuery(() => db.sessions.orderBy('ts').reverse().limit(20).toArray(), [])
+  const label: Record<string, string> = { wake: 'Risveglio', prelunch: 'Pre-pranzo', pretraining: 'Pre-allen.', evening: 'Sera' }
+
+  return (
+    <div>
+      <p className="mb-2 px-1 text-xs text-ink-dim">Eliminare una voce toglie anche gli XP che aveva dato.</p>
+
+      <SectionTitle>Check-in recenti</SectionTitle>
+      <div className="space-y-2">
+        {(checkins ?? []).map((c) => (
+          <RigaElim
+            key={c.id}
+            label={`Check-in ${label[c.tipo] ?? c.tipo}`}
+            sub={shortDateTime(c.ts)}
+            onDelete={() => deleteCheckin(c.id!).then(() => toast('Eliminato.'))}
+          />
+        ))}
+        {checkins?.length === 0 && <p className="text-sm text-ink-dim">Nessuno.</p>}
+      </div>
+
+      <SectionTitle>Impulsi recenti</SectionTitle>
+      <div className="space-y-2">
+        {(impulses ?? []).map((i) => (
+          <RigaElim
+            key={i.id}
+            label={IMPULSO_TIPI.find((t) => t.key === i.tipo)?.label ?? i.tipo}
+            sub={`${i.luogo} · ${shortDateTime(i.tsInizio)}${i.esito ? ' · esito registrato' : ''}`}
+            onDelete={() => deleteImpulse(i.id!).then(() => toast('Eliminato.'))}
+          />
+        ))}
+        {impulses?.length === 0 && <p className="text-sm text-ink-dim">Nessuno.</p>}
+      </div>
+
+      <SectionTitle>Sessioni recenti</SectionTitle>
+      <div className="space-y-2">
+        {(sessions ?? []).map((s) => (
+          <RigaElim
+            key={s.id}
+            label={`${s.attivita} (${binario(s.binario).nome})`}
+            sub={`${s.realta === null ? 'aperta' : `${s.previsione}→${s.realta}`} · ${shortDateTime(s.ts)}`}
+            onDelete={() => deleteSession(s.id!).then(() => toast('Eliminata.'))}
+          />
+        ))}
+        {sessions?.length === 0 && <p className="text-sm text-ink-dim">Nessuna.</p>}
       </div>
     </div>
   )

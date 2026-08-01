@@ -1,7 +1,13 @@
 import { db, getSetting, setSetting } from '../db/db'
-import type { Binario, MetricDefinition, MetricEntry } from '../db/types'
+import type { Binario, Modalita, MetricDefinition, MetricEntry } from '../db/types'
 import { grantXp, XP } from './xp'
-import { dayKey, isoWeekKey } from './dates'
+import { dayKey, isoWeekKey, logicalDayKey } from './dates'
+
+// Rimuove le righe XP collegate a una fonte (annullamento preciso, mai penalità).
+async function removeXpByRef(ref: string): Promise<void> {
+  const rows = await db.xpLedger.filter((x) => x.ref === ref).toArray()
+  if (rows.length > 0) await db.xpLedger.bulkDelete(rows.map((x) => x.id!))
+}
 
 const IMPULSO_BINARIO: Record<string, Binario> = {
   scroll: 'mente',
@@ -32,6 +38,7 @@ export async function saveMetricEntry(
   valoreNum: number | null,
   valoreJson: unknown = null,
   note?: string,
+  grantXpFlag = true,
 ): Promise<number> {
   const id = await db.metricEntries.add({
     metricKey: def.key,
@@ -40,8 +47,8 @@ export async function saveMetricEntry(
     ts: Date.now(),
     note,
   })
-  // Metriche osservative (es. conteggio calorico): mai XP, mai valutazione.
-  if (def.config?.noXp === true) return 0
+  // Metriche osservative (calorie) o inserite dentro un check-in: nessun XP a parte.
+  if (def.config?.noXp === true || !grantXpFlag) return 0
   return grantXp(def.binarioXp ?? 'mente', `metrica:${def.key}`, XP.metrica, `metric:${id}`)
 }
 
@@ -75,22 +82,28 @@ export async function logImpulse(
 ): Promise<number> {
   const binario = IMPULSO_BINARIO[tipo] ?? 'mente'
   // XP assegnati SUBITO, sul solo atto di registrare. L'esito non li cambiera mai.
-  const xp = await grantXp(binario, `impulso:${tipo}`, XP.impulso)
-  await db.impulses.add({
+  const id = (await db.impulses.add({
     tipo,
     luogo,
     intensita,
     tsInizio: Date.now(),
     tsFine: null,
     esito: null,
-    xpAssegnati: xp,
-  })
+    xpAssegnati: 0,
+  })) as number
+  const xp = await grantXp(binario, `impulso:${tipo}`, XP.impulso, `impulse:${id}`)
+  await db.impulses.update(id, { xpAssegnati: xp })
   return xp
 }
 
 // L'esito NON modifica in nessun modo gli XP gia assegnati.
 export async function closeImpulse(id: number, esito: string): Promise<void> {
   await db.impulses.update(id, { esito, tsFine: Date.now() })
+}
+
+export async function deleteImpulse(id: number): Promise<void> {
+  await removeXpByRef(`impulse:${id}`)
+  await db.impulses.delete(id)
 }
 
 // --- Sessioni (previsione/realta) ---
@@ -100,7 +113,7 @@ export async function startSession(
   previsione: number,
   domandaStudio: string | null = null,
 ): Promise<number> {
-  await db.sessions.add({
+  const id = (await db.sessions.add({
     binario,
     attivita,
     previsione,
@@ -110,8 +123,8 @@ export async function startSession(
     tsFine: null,
     domandaStudio,
     rispostaStudio: null,
-  })
-  return grantXp(binario, `sessione:${attivita}`, XP.sessionePrevisione)
+  })) as number
+  return grantXp(binario, `sessione:${attivita}`, XP.sessionePrevisione, `session:${id}`)
 }
 
 export async function closeSession(
@@ -128,22 +141,36 @@ export async function closeSession(
     tsFine: Date.now(),
     rispostaStudio,
   })
-  return grantXp(s.binario, `sessione-realta:${s.attivita}`, XP.sessioneRealta)
+  return grantXp(s.binario, `sessione-realta:${s.attivita}`, XP.sessioneRealta, `session-close:${id}`)
+}
+
+export async function deleteSession(id: number): Promise<void> {
+  await removeXpByRef(`session:${id}`)
+  await removeXpByRef(`session-close:${id}`)
+  await db.sessions.delete(id)
 }
 
 // --- Check-in ---
 export async function addCheckin(
   tipo: 'wake' | 'prelunch' | 'pretraining' | 'evening',
   risposte: Record<string, unknown>,
+  metricheLoggate = 0,
 ): Promise<number> {
-  await db.checkins.add({ tipo, ts: Date.now(), risposte })
-  return grantXp(CHECKIN_BINARIO[tipo], `checkin:${tipo}`, XP.checkin)
+  const id = (await db.checkins.add({ tipo, ts: Date.now(), risposte })) as number
+  // XP del check-in: base + piccolo bonus per le misure inserite, con tetto (anti box-ticking).
+  const bonus = Math.min(metricheLoggate * 2, 12)
+  return grantXp(CHECKIN_BINARIO[tipo], `checkin:${tipo}`, XP.checkin + bonus, `checkin:${id}`)
+}
+
+export async function deleteCheckin(id: number): Promise<void> {
+  await removeXpByRef(`checkin:${id}`)
+  await db.checkins.delete(id)
 }
 
 export async function checkinFatalOggi(tipo: string): Promise<boolean> {
-  const oggi = dayKey()
+  const oggi = logicalDayKey()
   const rows = await db.checkins.where('tipo').equals(tipo).toArray()
-  return rows.some((r) => dayKey(r.ts) === oggi)
+  return rows.some((r) => logicalDayKey(r.ts) === oggi)
 }
 
 // --- Boss (XP sulla preparazione, sez. 3.2) ---
@@ -195,4 +222,38 @@ export async function completaMissione(): Promise<number> {
   if (!m || m.fatta) return 0
   await setSetting(key, { ...m, fatta: true })
   return grantXp('vita', 'missione', XP.missione)
+}
+
+// --- Trasferta manuale (override della fase) ---
+export async function getModalitaOverride(): Promise<Modalita | null> {
+  return getSetting<Modalita | null>('modalita_override', null)
+}
+export async function setModalitaOverride(m: Modalita | null): Promise<void> {
+  await setSetting('modalita_override', m)
+}
+
+// --- Quick-log Vita (riposo/ozio/altri): un tap, XP subito ---
+export async function logVita(attivita: string): Promise<number> {
+  return grantXp('vita', `vita:${attivita}`, XP.vita)
+}
+
+// --- Calibrazione predittiva ---
+export async function addPrediction(testo: string, confidenza: number): Promise<number> {
+  const id = (await db.predictions.add({
+    testo,
+    confidenza,
+    settimana: isoWeekKey(),
+    esito: null,
+    tsCreazione: Date.now(),
+    tsVerifica: null,
+  })) as number
+  await grantXp('mente', 'calibrazione', Math.round(XP.calibrazione / 3), `pred:${id}`)
+  return id
+}
+export async function verifyPrediction(id: number, esito: boolean): Promise<void> {
+  await db.predictions.update(id, { esito, tsVerifica: Date.now() })
+}
+export async function deletePrediction(id: number): Promise<void> {
+  await removeXpByRef(`pred:${id}`)
+  await db.predictions.delete(id)
 }

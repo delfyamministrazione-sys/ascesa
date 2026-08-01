@@ -115,15 +115,18 @@ export function CheckinFlow({ tipo, onClose }: { tipo: Tipo; onClose: () => void
 
   const complete = async () => {
     setSaving(true)
-    let xpTot = 0
+    let count = 0
     for (const d of wakeDefs) {
       const v = metricVals[d.key]
       if (v && (v.num !== null || (v.json !== undefined && v.json !== null && v.json !== ''))) {
-        xpTot += await saveMetricEntry(d, v.num, v.json ?? null)
+        // le misure dentro il check-in non danno XP a parte: li conta il check-in (con tetto)
+        await saveMetricEntry(d, v.num, v.json ?? null, undefined, false)
+        count++
       }
     }
-    xpTot += await addCheckin(tipo, risposte)
-    toast(<span className="font-semibold">Check-in salvato · +{xpTot} XP</span>)
+    const xp = await addCheckin(tipo, risposte, count)
+    if (navigator.vibrate) navigator.vibrate(15)
+    toast(<span className="font-semibold">Check-in salvato · +{xp} XP</span>)
     setSaving(false)
     onClose()
   }

@@ -11,6 +11,14 @@ export function dayKey(d: Date | number = new Date()): string {
   return format(d, 'yyyy-MM-dd')
 }
 
+// Giorno "logico": la giornata inizia alle 04:00, così un check-in dopo mezzanotte
+// resta nel giorno appena passato invece di finire in quello dopo.
+const CUTOFF_H = 4
+export function logicalDayKey(d: Date | number = Date.now()): string {
+  const ms = typeof d === 'number' ? d : d.getTime()
+  return dayKey(ms - CUTOFF_H * 3_600_000)
+}
+
 export function isoWeekKey(d: Date | number = new Date()): string {
   const w = getISOWeek(d)
   const y = getISOWeekYear(d)
