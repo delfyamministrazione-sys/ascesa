@@ -56,8 +56,43 @@ export interface Impulse {
   intensita: number // 1..5
   tsInizio: number
   tsFine: number | null
-  esito: string | null // non modifica mai gli XP
+  esito: string | null
   xpAssegnati: number
+  contromossa?: string | null // scritta al momento, diversa ogni volta
+  autoClosed?: boolean // chiuso automaticamente dopo 2h
+}
+
+export type ActivityTipo = 'fixed' | 'timed' | 'tiered' | 'reps' | 'sfida'
+export interface ActivityTier {
+  key: string
+  label: string
+  xp: number
+}
+export interface ActivityDef {
+  key: string
+  nome: string
+  binario: Binario
+  tipo: ActivityTipo
+  baseXp: number
+  attiva: boolean
+  builtin: boolean
+  ordine: number
+  config: {
+    perMinute?: number
+    cap?: number
+    tiers?: ActivityTier[]
+    periodo?: 'daily' | 'weekly'
+    unita?: string
+    hint?: string
+  }
+}
+export interface ActivityLog {
+  id?: number
+  defKey: string
+  binario: Binario
+  xp: number
+  ts: number
+  dettaglio: unknown // {minutes} | {tier} | {note} ...
 }
 
 export interface Session {

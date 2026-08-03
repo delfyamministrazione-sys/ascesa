@@ -33,6 +33,8 @@ export const XP = {
   missione: 50,
   calibrazione: 12,
   vita: 8,
+  impulsoResistito: 15, // bonus se resisti / usi la contromossa (additivo, mai penalità)
+  impulsoPassato: 5, // bonus se l'impulso è passato da solo
 } as const
 
 /**

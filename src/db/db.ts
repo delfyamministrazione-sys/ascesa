@@ -12,6 +12,8 @@ import type {
   Phase,
   Setting,
   NutritionEntry,
+  ActivityDef,
+  ActivityLog,
 } from './types'
 
 export class AscesaDB extends Dexie {
@@ -27,6 +29,8 @@ export class AscesaDB extends Dexie {
   phases!: Table<Phase, number>
   settings!: Table<Setting, string>
   nutrition!: Table<NutritionEntry, number>
+  activityDefs!: Table<ActivityDef, string>
+  activityLogs!: Table<ActivityLog, number>
 
   constructor() {
     super('ascesa')
@@ -48,6 +52,11 @@ export class AscesaDB extends Dexie {
     // v2: modulo nutrizione osservativo
     this.version(2).stores({
       nutrition: '++id, ts, pasto',
+    })
+    // v3: attivita a punti (additiva, non tocca gli XP esistenti)
+    this.version(3).stores({
+      activityDefs: 'key, binario, tipo, ordine',
+      activityLogs: '++id, defKey, ts',
     })
   }
 }

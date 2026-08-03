@@ -1,5 +1,6 @@
 import { db, setSetting } from './db'
 import type { MetricDefinition, Phase } from './types'
+import { syncActivityDefs } from './activities'
 
 type SeedMetric = Omit<MetricDefinition, 'attiva' | 'builtin' | 'ordine' | 'config'> &
   Partial<Pick<MetricDefinition, 'attiva' | 'builtin' | 'ordine' | 'config'>>
@@ -36,6 +37,16 @@ const METRICS: SeedMetric[] = [
   { key: 'peso', nome: 'Peso', categoria: 'Composizione', binarioXp: 'corpo', unita: 'kg', tipoInput: 'number', frequenza: 'daily', direzione: 'down', sorgente: 'manual', protocollo: 'Appena sveglio, dopo essere andato in bagno, a digiuno, nudo, stessa bilancia. Vedrai solo la media a 7 giorni: il valore del singolo giorno e rumore.', config: { min: 30, max: 250, step: 0.1, hideDaily: true, displayRule: 'movingAvg7' } },
   { key: 'circonferenza_vita', nome: 'Circonferenza vita', categoria: 'Composizione', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'weekly', direzione: 'down', sorgente: 'manual', protocollo: "In piedi, metro all'altezza dell'ombelico, aderente ma senza stringere, a fine espirazione normale. Dice piu del peso sulla salute metabolica.", config: { min: 40, max: 200, step: 0.5 } },
   { key: 'foto', nome: 'Foto di confronto', categoria: 'Composizione', binarioXp: 'corpo', unita: '', tipoInput: 'photo', frequenza: 'biweekly', direzione: 'neutral', sorgente: 'manual', protocollo: 'Ogni due settimane: stessa luce, stessa distanza, stessa posa, stessa ora, stesso sfondo. Cosi il confronto e onesto.' },
+
+  // --- Circonferenze muscolari (settimanali/bisettimanali, a muscolo rilassato salvo braccio) ---
+  { key: 'circ_collo', nome: 'Collo', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'neutral', sorgente: 'manual', protocollo: 'Metro a meta collo, rilassato, senza stringere.', config: { min: 20, max: 60, step: 0.5 } },
+  { key: 'circ_spalle', nome: 'Spalle', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Giro spalle sul punto piu largo dei deltoidi, braccia rilassate.', config: { min: 80, max: 160, step: 0.5 } },
+  { key: 'circ_petto', nome: 'Petto', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Metro all altezza dei capezzoli, a fine espirazione normale.', config: { min: 70, max: 160, step: 0.5 } },
+  { key: 'circ_braccio', nome: 'Braccio (bicipite)', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Braccio CONTRATTO, punto piu largo del bicipite. Sempre lo stesso braccio.', config: { min: 20, max: 60, step: 0.5 } },
+  { key: 'circ_avambraccio', nome: 'Avambraccio', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Punto piu largo dell avambraccio, mano rilassata.', config: { min: 15, max: 45, step: 0.5 } },
+  { key: 'circ_fianchi', nome: 'Fianchi / glutei', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'neutral', sorgente: 'manual', protocollo: 'Giro sul punto piu sporgente dei glutei, piedi uniti.', config: { min: 70, max: 160, step: 0.5 } },
+  { key: 'circ_coscia', nome: 'Coscia', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Punto piu largo della coscia, in piedi, gamba rilassata. Sempre la stessa.', config: { min: 35, max: 90, step: 0.5 } },
+  { key: 'circ_polpaccio', nome: 'Polpaccio', categoria: 'Circonferenze', binarioXp: 'corpo', unita: 'cm', tipoInput: 'number', frequenza: 'biweekly', direzione: 'up', sorgente: 'manual', protocollo: 'Punto piu largo del polpaccio, in piedi.', config: { min: 25, max: 60, step: 0.5 } },
 
   // --- Cognitive e attenzione (Mente) ---
   { key: 'tempo_reazione', nome: 'Tempo di reazione', categoria: 'Cognitive', binarioXp: 'mente', unita: 'ms', tipoInput: 'number', frequenza: 'daily', direzione: 'down', sorgente: 'phone', protocollo: 'Test da telefono (app o sito "reaction time"): al segnale tocca il prima possibile. Fai 5 prove, segna la media in millisecondi.', config: { min: 100, max: 1000 } },
@@ -99,6 +110,7 @@ export async function syncBuiltinDefs(): Promise<void> {
 
 export async function ensureSeed(): Promise<void> {
   await syncBuiltinDefs()
+  await syncActivityDefs()
 
   const phaseCount = await db.phases.count()
   if (phaseCount === 0) {

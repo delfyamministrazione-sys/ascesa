@@ -3,8 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { Card, Chip, SectionTitle, useToast, useTick } from '../components/ui'
 import { BOSS, ESITI_IMPULSO, IMPULSO_TIPI, LUOGHI } from '../lib/options'
-import { closeImpulse, declareBoss, logImpulse, recordBossEncounter } from '../lib/actions'
+import { closeImpulse, declareBoss, deleteImpulse, logImpulse, recordBossEncounter } from '../lib/actions'
 import { dayKey } from '../lib/dates'
+import type { Binario, Impulse } from '../db/types'
+
+const IMP_BIN: Record<string, Binario> = { scroll: 'mente', cibo: 'tavola', visivo: 'spirito', altro: 'mente' }
 
 const VENTI_MIN = 20 * 60 * 1000
 
@@ -119,37 +122,9 @@ export function Impulso() {
         <>
           <SectionTitle>Impulsi aperti</SectionTitle>
           <div className="space-y-3">
-            {impulsiAperti.map((imp) => {
-              const eta = Date.now() - imp.tsInizio
-              const pronto = eta >= VENTI_MIN
-              const t = IMPULSO_TIPI.find((x) => x.key === imp.tipo)
-              return (
-                <Card key={imp.id} style={{ borderLeft: `4px solid ${t?.color ?? '#97a0b2'}` }}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-semibold">{t?.label ?? imp.tipo}</span>
-                    <span className="text-xs text-ink-dim">
-                      int. {imp.intensita} · {imp.luogo} · {elapsedLabel(eta)}
-                    </span>
-                  </div>
-                  <div className="text-sm text-ink-dim">
-                    {pronto ? 'Com e andato?' : 'Segna quando e passato (registra la durata reale):'}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {ESITI_IMPULSO.map((e) => (
-                      <Chip
-                        key={e.key}
-                        onClick={async () => {
-                          await closeImpulse(imp.id!, e.key)
-                          toast('Esito registrato. Gli XP restano invariati.')
-                        }}
-                      >
-                        {e.label}
-                      </Chip>
-                    ))}
-                  </div>
-                </Card>
-              )
-            })}
+            {impulsiAperti.map((imp) => (
+              <ImpulsoApertoCard key={imp.id} imp={imp} />
+            ))}
           </div>
         </>
       )}
@@ -177,6 +152,60 @@ export function Impulso() {
         ))}
       </div>
     </div>
+  )
+}
+
+function ImpulsoApertoCard({ imp }: { imp: Impulse }) {
+  const { toastXp, toast } = useToast()
+  const [contromossa, setContromossa] = useState('')
+  const [conferma, setConferma] = useState(false)
+  const eta = Date.now() - imp.tsInizio
+  const pronto = eta >= VENTI_MIN
+  const t = IMPULSO_TIPI.find((x) => x.key === imp.tipo)
+
+  const chiudi = async (esito: string) => {
+    const bonus = await closeImpulse(imp.id!, esito, contromossa.trim() || null)
+    if (navigator.vibrate) navigator.vibrate(12)
+    if (bonus > 0) toastXp(bonus, IMP_BIN[imp.tipo] ?? 'mente')
+    else toast('Registrato. La base XP resta.')
+  }
+
+  return (
+    <Card style={{ borderLeft: `4px solid ${t?.color ?? '#97a0b2'}` }}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="font-semibold">{t?.label ?? imp.tipo}</span>
+        <div className="flex shrink-0 items-center gap-2 text-xs text-ink-dim">
+          <span>int. {imp.intensita} · {elapsedLabel(eta)}</span>
+          {conferma ? (
+            <button onClick={() => deleteImpulse(imp.id!)} className="rounded bg-corpo px-2 py-0.5 font-semibold text-white">
+              elimina
+            </button>
+          ) : (
+            <button onClick={() => setConferma(true)} className="px-1 text-ink-dim">
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-1 text-sm text-ink-dim">
+        {pronto ? 'Com e andata?' : 'Scrivi la contromossa di stavolta (cambia ogni volta) e segna com e andata:'}
+      </div>
+      <input
+        value={contromossa}
+        onChange={(e) => setContromossa(e.target.value)}
+        placeholder="Contromossa usata stavolta (es. bevuto acqua, uscito a camminare)"
+        className="mb-2 w-full rounded-xl border border-line bg-panel2 px-3 py-2 text-sm outline-none"
+      />
+      <div className="flex flex-wrap gap-2">
+        {ESITI_IMPULSO.map((e) => (
+          <Chip key={e.key} color={e.key === 'resistito' ? '#22c55e' : undefined} onClick={() => chiudi(e.key)}>
+            {e.label}
+          </Chip>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-ink-dim">Resistere dà bonus. Cedere non toglie niente.</p>
+    </Card>
   )
 }
 

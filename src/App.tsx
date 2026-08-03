@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { ensureSeed } from './db/seed'
 import { db, setSetting } from './db/db'
 import { requestPersistence } from './lib/storage'
+import { sweepOpenImpulses } from './lib/actions'
 import { BottomNav } from './components/BottomNav'
 import { LevelUpWatcher } from './components/LevelUpWatcher'
 import { Onboarding } from './screens/Onboarding'
@@ -13,6 +14,7 @@ import { Impulso } from './screens/Impulso'
 import { Corpo } from './screens/Corpo'
 import { Menu } from './screens/Menu'
 import { Lab } from './screens/Lab'
+import { Attivita } from './screens/Attivita'
 
 function Splash() {
   return (
@@ -31,7 +33,10 @@ export default function App() {
     requestPersistence()
     // Anche se il seed dovesse fallire, non blocchiamo l'app sullo splash.
     ensureSeed()
-      .then(() => setSeeded(true))
+      .then(() => {
+        setSeeded(true)
+        sweepOpenImpulses() // chiude gli impulsi dimenticati da >2h
+      })
       .catch((err) => {
         console.error('ensureSeed error', err)
         setSeeded(true)
@@ -55,6 +60,7 @@ export default function App() {
           <Route path="/corpo" element={<Corpo />} />
           <Route path="/menu" element={<Menu />} />
           <Route path="/lab" element={<Lab />} />
+          <Route path="/attivita" element={<Attivita />} />
           <Route path="*" element={<Oggi />} />
         </Routes>
       </main>

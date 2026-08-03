@@ -14,12 +14,12 @@ import {
   completaMissione,
   deleteSession,
   getMissione,
-  logVita,
   setMissione,
   setModalitaOverride,
   startSession,
 } from '../lib/actions'
 import { daysSince, getLastBackup } from '../lib/storage'
+import { SfideBox } from '../components/Activities'
 import { CheckinFlow } from './CheckinFlow'
 
 type Tipo = 'wake' | 'prelunch' | 'pretraining' | 'evening'
@@ -35,13 +35,10 @@ const CHECKIN_META: Record<Tipo, { label: string; color: string }> = {
   pretraining: { label: 'Check-in Pre-allenamento', color: '#ef4444' },
   evening: { label: 'Check-in Sera', color: '#8b5cf6' },
 }
-const VITA_QUICK = ['Riposo', 'Ozio', 'Tempo con altri', 'Gioco', 'Sport']
-
 export function Oggi() {
   const { progress, streak, modalita, fase, totaleXp } = useProgress()
   const [checkinAttivo, setCheckinAttivo] = useState<Tipo | null>(null)
   const navigate = useNavigate()
-  const { toastXp } = useToast()
 
   const oggi = logicalDayKey()
   const checkinsOggi = useLiveQuery(async () => {
@@ -63,12 +60,6 @@ export function Oggi() {
   else if (!isTrasferta && ora >= 11 && ora < 15 && !done.has('prelunch')) prossimo = 'prelunch'
   else if (!isTrasferta && ora >= 15 && ora < 20 && !done.has('pretraining')) prossimo = 'pretraining'
   else if (ora >= 18 && !done.has('evening')) prossimo = 'evening'
-
-  const vita = async (a: string) => {
-    const xp = await logVita(a)
-    if (navigator.vibrate) navigator.vibrate(12)
-    toastXp(xp, 'vita')
-  }
 
   return (
     <div className="mx-auto max-w-md px-4 pb-8 pt-safe">
@@ -219,15 +210,25 @@ export function Oggi() {
         })}
       </div>
 
-      {/* Vita quick-log */}
-      <SectionTitle>Vita · un tap (anche l'ozio vale)</SectionTitle>
-      <div className="flex flex-wrap gap-2">
-        {VITA_QUICK.map((a) => (
-          <Chip key={a} color="#22c55e" onClick={() => vita(a)}>
-            + {a}
-          </Chip>
-        ))}
-      </div>
+      {/* Attività a punti */}
+      <button
+        onClick={() => navigate('/attivita')}
+        className="mt-3 w-full rounded-2xl border border-line bg-panel p-4 text-left active:scale-[.99]"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-semibold">Attività a punti</div>
+            <div className="text-xs text-ink-dim">
+              Culto, Bibbia, inglese, allenamento, fisio, lettura, giochi… XP per tempo e sforzo.
+            </div>
+          </div>
+          <span className="text-ink-dim">›</span>
+        </div>
+      </button>
+
+      {/* Sfide & bonus */}
+      <SectionTitle>Sfide & bonus di oggi (facoltative)</SectionTitle>
+      <SfideBox />
 
       <MissioneSettimanale />
       <SessioniBox soloSpirito={isTrasferta} />

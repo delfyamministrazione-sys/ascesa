@@ -1,6 +1,7 @@
 import { db, getSetting, setSetting } from '../db/db'
-import type { Binario, Modalita, MetricDefinition, MetricEntry } from '../db/types'
+import type { ActivityDef, Binario, Modalita, MetricDefinition, MetricEntry } from '../db/types'
 import { grantXp, XP } from './xp'
+import { xpForActivity, type ActivityDetail } from './activities'
 import { dayKey, isoWeekKey, logicalDayKey } from './dates'
 
 // Rimuove le righe XP collegate a una fonte (annullamento preciso, mai penalità).
@@ -96,14 +97,41 @@ export async function logImpulse(
   return xp
 }
 
-// L'esito NON modifica in nessun modo gli XP gia assegnati.
-export async function closeImpulse(id: number, esito: string): Promise<void> {
-  await db.impulses.update(id, { esito, tsFine: Date.now() })
+// La base XP resta sempre. Se resisti / usi la contromossa arriva un BONUS additivo
+// (mai penalità se cedi). 'contromossa' e la mossa scritta stavolta, diversa ogni volta.
+export async function closeImpulse(
+  id: number,
+  esito: string,
+  contromossa: string | null = null,
+): Promise<number> {
+  const imp = await db.impulses.get(id)
+  await db.impulses.update(id, { esito, tsFine: Date.now(), contromossa })
+  if (!imp) return 0
+  const bin = IMPULSO_BINARIO[imp.tipo] ?? 'mente'
+  if (esito === 'resistito') return grantXp(bin, `impulso-vinto:${imp.tipo}`, XP.impulsoResistito, `impulse-bonus:${id}`)
+  if (esito === 'passato') return grantXp(bin, `impulso-passato:${imp.tipo}`, XP.impulsoPassato, `impulse-bonus:${id}`)
+  return 0 // 'seguito': nessun bonus, ma la base non si tocca
 }
 
 export async function deleteImpulse(id: number): Promise<void> {
   await removeXpByRef(`impulse:${id}`)
+  await removeXpByRef(`impulse-bonus:${id}`)
   await db.impulses.delete(id)
+}
+
+// Se non segni l'esito entro 2h, l'impulso si chiude da solo come "passato" (senza bonus).
+export async function sweepOpenImpulses(): Promise<void> {
+  const now = Date.now()
+  const open = (await db.impulses.toArray()).filter((i) => i.tsFine === null)
+  for (const i of open) {
+    if (now - i.tsInizio > 2 * 3_600_000) {
+      await db.impulses.update(i.id!, {
+        tsFine: i.tsInizio + 2 * 3_600_000,
+        esito: 'passato',
+        autoClosed: true,
+      })
+    }
+  }
 }
 
 // --- Sessioni (previsione/realta) ---
@@ -256,4 +284,31 @@ export async function verifyPrediction(id: number, esito: boolean): Promise<void
 export async function deletePrediction(id: number): Promise<void> {
   await removeXpByRef(`pred:${id}`)
   await db.predictions.delete(id)
+}
+
+// --- Attività a punti ---
+export async function logActivity(def: ActivityDef, dettaglio: ActivityDetail): Promise<number> {
+  const xp0 = xpForActivity(def, dettaglio)
+  const id = (await db.activityLogs.add({
+    defKey: def.key,
+    binario: def.binario,
+    xp: 0,
+    ts: Date.now(),
+    dettaglio,
+  })) as number
+  const xp = await grantXp(def.binario, `attivita:${def.key}`, xp0, `activity:${id}`)
+  await db.activityLogs.update(id, { xp })
+  return xp
+}
+
+export async function deleteActivityLog(id: number): Promise<void> {
+  await removeXpByRef(`activity:${id}`)
+  await db.activityLogs.delete(id)
+}
+
+// Una sfida/dieta si può prendere una volta per periodo (giorno o settimana).
+export async function attivitaFattaNelPeriodo(defKey: string, periodo: 'daily' | 'weekly'): Promise<boolean> {
+  const logs = await db.activityLogs.where('defKey').equals(defKey).toArray()
+  if (periodo === 'weekly') return logs.some((l) => isoWeekKey(l.ts) === isoWeekKey())
+  return logs.some((l) => logicalDayKey(l.ts) === logicalDayKey())
 }

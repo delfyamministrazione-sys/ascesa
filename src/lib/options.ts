@@ -24,10 +24,9 @@ export interface EsitoImpulso {
   label: string
 }
 export const ESITI_IMPULSO: EsitoImpulso[] = [
+  { key: 'resistito', label: 'Ho resistito / usato la contromossa' },
   { key: 'passato', label: 'E passato da solo' },
-  { key: 'contromossa', label: 'Ho usato la contromossa' },
   { key: 'seguito', label: 'L ho seguito' },
-  { key: 'altro', label: 'Altro' },
 ]
 
 // --- Boss ricorrenti (sez. 3.2) ---

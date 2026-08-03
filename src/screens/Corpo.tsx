@@ -175,6 +175,14 @@ function Specchio() {
 function Fisico() {
   const entries = useLiveQuery(() => db.metricEntries.toArray(), [])
 
+  const circDefs = useLiveQuery(
+    async () =>
+      (await db.metricDefinitions.toArray())
+        .filter((d) => d.categoria === 'Circonferenze' && d.attiva)
+        .sort((a, b) => a.ordine - b.ordine),
+    [],
+  )
+
   const s = useMemo(() => {
     const e = entries ?? []
     const grab = (k: string) => lastPerDay(e, k)
@@ -285,6 +293,23 @@ function Fisico() {
             </BarChart>
           </ChartBox>
         )}
+      </Card>
+
+      {/* Circonferenze */}
+      <SectionTitle>Circonferenze</SectionTitle>
+      <Card>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          {(circDefs ?? []).map((d) => {
+            const v = latestValue(entries ?? [], d.key)
+            return (
+              <div key={d.key} className="flex items-center justify-between text-sm">
+                <span className="text-ink-dim">{d.nome}</span>
+                <span className="font-semibold tabular-nums">{v === null ? '—' : `${v}`}</span>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-[11px] text-ink-dim">Le registri in Registra → Ogni due settimane (cm).</p>
       </Card>
     </div>
   )
