@@ -8,6 +8,7 @@ import { BINARI, binario } from '../lib/binari'
 import { MODALITA } from '../lib/phases'
 import { dayKey, shortDateTime } from '../lib/dates'
 import { deleteCheckin, deleteImpulse, deleteSession } from '../lib/actions'
+import { APP_VERSION, forceUpdate } from '../lib/storage'
 import { IMPULSO_TIPI } from '../lib/options'
 import {
   exportCSVImpulsi,
@@ -52,6 +53,15 @@ export function Menu() {
     <div className="mx-auto max-w-md px-4 pb-8 pt-safe">
       <h1 className="py-4 text-xl font-bold">Menu</h1>
       <div className="space-y-3">
+        <Card onClick={() => forceUpdate()}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-semibold text-accent">Aggiorna app</div>
+              <div className="text-xs text-ink-dim">Scarica l'ultima versione (non tocca i tuoi dati)</div>
+            </div>
+            <span className="text-ink-dim">⟳</span>
+          </div>
+        </Card>
         <Card onClick={() => navigate('/lab')}>
           <div className="flex items-center justify-between">
             <div>
@@ -74,7 +84,7 @@ export function Menu() {
         ))}
       </div>
       <p className="mt-6 text-center text-xs text-ink-dim">
-        Ascesa · dati solo su questo dispositivo · {dayKey()}
+        Ascesa · {APP_VERSION} · dati solo su questo dispositivo · {dayKey()}
       </p>
     </div>
   )

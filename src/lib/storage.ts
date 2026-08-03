@@ -1,5 +1,26 @@
 import { getSetting, setSetting } from '../db/db'
 
+// Versione visibile in Menu, per capire al volo se sei aggiornato.
+export const APP_VERSION = 'v6 · 3 ago 2026'
+
+// Forza l'aggiornamento: rimuove il service worker e le cache (NON i dati/punti) e ricarica.
+export async function forceUpdate(): Promise<void> {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map((r) => r.unregister().catch(() => {})))
+    }
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch {
+    // ignora
+  } finally {
+    location.reload()
+  }
+}
+
 // Chiede al browser di non cancellare i dati (riduce il rischio di perdita su iOS/Safari).
 export async function requestPersistence(): Promise<boolean> {
   try {
